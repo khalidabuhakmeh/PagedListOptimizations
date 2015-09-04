@@ -37,36 +37,72 @@ namespace PagedListOptimizations
 
             IPagedList<Person> original;
             IPagedList<Person> optimized;
+            IPagedList<Person> manual;
+            IPagedList<Person> future;
 
             using (var database = new LocalDb())
             {
-                Context.Load(database.ConnectionString, people);
+                var connectionString = database.ConnectionString + "MultipleActiveResultSets=True;";
 
-                Expression<Func<Context, IQueryable<Person>>> compiled = (db) => db.Persons.OrderBy(x => x.Id);
-                var query = compiled.Compile();
+                Context.Load(connectionString, people);
 
                 var stopwatch = new Stopwatch();
+                
+                using (var context = new Context(connectionString))
+                {
+                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                    stopwatch.Start();
+                    original = query.ToPagedList(1, 100);
+                    stopwatch.Stop();
+                    Print("original", original, stopwatch);
+                }
 
-                stopwatch.Start();
                 using (var context = new Context(database.ConnectionString))
                 {
-                    original = query(context).ToPagedList(1, 100);
+                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                    stopwatch.Restart();
+                    optimized = new EntityFrameworkPagedList<Person>(query, 1, 100);
+                    stopwatch.Stop();
+                    Print("optimized", optimized, stopwatch);
                 }
-                stopwatch.Stop();
-                Console.WriteLine("original : {0} ms", stopwatch.Elapsed.TotalMilliseconds);
 
-                stopwatch.Restart();
                 using (var context = new Context(database.ConnectionString))
                 {
-                    optimized = new EntityFrameworkPagedList<Person>(query(context), 1, 100);
+                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                    stopwatch.Restart();
+                    manual = new StaticPagedList<Person>(query.Skip(0).Take(100).ToList(), 1, 100, query.Count()) ;
+                    stopwatch.Stop();
+                    Print("manual", manual, stopwatch);
                 }
-                stopwatch.Stop();
-                Console.WriteLine("optimized : {0} ms", stopwatch.Elapsed.TotalMilliseconds);
+
+                using (var context = new Context(database.ConnectionString))
+                {
+                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+
+                    var items = query.Skip(0).Take(100).Future();
+                    var total = query.FutureCount();
+
+                    stopwatch.Restart();
+                    future = new StaticPagedList<Person>(items, 1, 100, total);
+                    stopwatch.Stop();
+                    Print("future (static)", future, stopwatch);
+                }
             }
 
             Console.ReadLine();
         }
+
+        public static void Print(string title, IPagedList list, Stopwatch stopwatch)
+        {
+            Console.WriteLine("{0} : {1} ms | pageCount: {2} | total {3} ",
+                title,
+                stopwatch.Elapsed.TotalMilliseconds,
+                list.PageCount,
+                list.TotalItemCount);
+        }
     }
+
+
 
     public class Context : DbContext
     {
@@ -113,14 +149,11 @@ namespace PagedListOptimizations
             if (pageSize < 1)
                 throw new ArgumentOutOfRangeException("pageSize", pageSize, "PageSize cannot be less than 1.");
 
-            var result = (pageNumber == 1
-                ? superset.Skip(0).Take(pageSize)
-                : superset.Skip((pageNumber - 1)*pageSize).Take(pageSize)
-                ).Future();
+            var result = superset.Skip((pageNumber - 1)*pageSize).Take(pageSize).Future();
 
             // execute both queries
             // set source to blank list if superset is null to prevent exceptions
-            TotalItemCount = superset == null ? 0 : superset.FutureCount();
+            TotalItemCount = superset.FutureCount();
 
             PageSize = pageSize;
             PageNumber = pageNumber;
