@@ -34,3 +34,50 @@ future (static) : 1.8939 ms | pageCount: 10 | total 1000
 ```
 
 WTF! This is crazy. Time to pull out the profiler and figure out where there is a problem in `ToPagedList`. That, or my tests are flawed some how.
+
+## The Code
+
+Here is the code in the readme so far so you don't have to go digging.
+
+```csharp
+using (var context = new Context(connectionString))
+{
+    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+    stopwatch.Start();
+    original = query.ToPagedList(1, 100);
+    stopwatch.Stop();
+    Print("original", original, stopwatch);
+}
+
+using (var context = new Context(database.ConnectionString))
+{
+    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+    stopwatch.Restart();
+    optimized = new EntityFrameworkPagedList<Person>(query, 1, 100);
+    stopwatch.Stop();
+    Print("optimized", optimized, stopwatch);
+}
+
+using (var context = new Context(database.ConnectionString))
+{
+    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+    stopwatch.Restart();
+    manual = new StaticPagedList<Person>(query.Skip(0).Take(100).ToList(), 1, 100, query.Count()) ;
+    stopwatch.Stop();
+    Print("manual", manual, stopwatch);
+}
+
+using (var context = new Context(database.ConnectionString))
+{
+    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+
+    var items = query.Skip(0).Take(100).Future();
+    var total = query.FutureCount();
+
+    stopwatch.Restart();
+    future = new StaticPagedList<Person>(items, 1, 100, total);
+    stopwatch.Stop();
+    Print("future (static)", future, stopwatch);
+}
+
+```
