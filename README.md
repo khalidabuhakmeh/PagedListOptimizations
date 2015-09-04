@@ -19,3 +19,18 @@ Pretty disappointing, but there are a few things to keep in mind.
 - The test results were run locally, where network latency is less of an issue.
 - Why is materializing a `FutureQuery` so expensive as compared to a regular query?
 - There may be a way to accomplish a paged result without the need to batch queries with `FutureQuery`
+
+## Twist
+
+So I wanted to see what it would be like if I just manually did the paging, instead of depending on the extension method helpers. I wrote a few more samples which you can see in the code. This is the result.
+
+![](https://www.evernote.com/l/AA-DQecQhL5FrJ8YXdXeeYygqYV24-9EvtMB/image.png)
+
+```
+original : 27.2981 ms | pageCount: 10 | total 1000
+optimized : 585.0301 ms | pageCount: 10 | total 1000
+manual : 3.9125 ms | pageCount: 10 | total 1000
+future (static) : 1.8939 ms | pageCount: 10 | total 1000
+```
+
+WTF! This is crazy. Time to pull out the profiler and figure out where there is a problem in `ToPagedList`. That, or my tests are flawed some how.
