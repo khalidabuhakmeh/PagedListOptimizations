@@ -47,58 +47,79 @@ namespace PagedListOptimizations
                 Context.Load(connectionString, people);
 
                 var stopwatch = new Stopwatch();
-                
-                using (var context = new Context(connectionString))
+
+                Dictionary<string, List<double>> runs = new Dictionary<string, List<double>>()
                 {
-                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
-                    stopwatch.Start();
-                    original = query.ToPagedList(1, 100);
-                    stopwatch.Stop();
-                    Print("original", original, stopwatch);
+                    {"original", new List<double>()},
+                    {"optimized", new List<double>()},
+                    {"manual", new List<double>()},
+                    {"future (static)", new List<double>()}
+                };
+
+                for (int i = 0; i < 100; i++)
+                {
+                    using (var context = new Context(connectionString))
+                    {
+                        var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                        stopwatch.Start();
+                        original = query.ToPagedList(1, 100);
+                        stopwatch.Stop();
+                        Print("original", original, stopwatch, runs);
+                    }
+
+                    using (var context = new Context(database.ConnectionString))
+                    {
+                        var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                        stopwatch.Restart();
+                        optimized = new EntityFrameworkPagedList<Person>(query, 1, 100);
+                        stopwatch.Stop();
+                        Print("optimized", optimized, stopwatch, runs);
+                    }
+
+                    using (var context = new Context(database.ConnectionString))
+                    {
+                        var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+                        stopwatch.Restart();
+                        manual = new StaticPagedList<Person>(query.Skip(0).Take(100).ToList(), 1, 100, query.Count());
+                        stopwatch.Stop();
+                        Print("manual", manual, stopwatch, runs);
+                    }
+
+                    using (var context = new Context(database.ConnectionString))
+                    {
+                        var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
+
+                        var items = query.Skip(0).Take(100).Future();
+                        var total = query.FutureCount();
+
+                        stopwatch.Restart();
+                        future = new StaticPagedList<Person>(items, 1, 100, total);
+                        stopwatch.Stop();
+                        Print("future (static)", future, stopwatch, runs);
+                    }
+                    if (i % 100 == 0)
+                        Console.WriteLine("{0} -----", i);
                 }
 
-                using (var context = new Context(database.ConnectionString))
+                foreach (var run in runs)
                 {
-                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
-                    stopwatch.Restart();
-                    optimized = new EntityFrameworkPagedList<Person>(query, 1, 100);
-                    stopwatch.Stop();
-                    Print("optimized", optimized, stopwatch);
+                    Console.WriteLine("{0} average : {1} ms", run.Key, run.Value.Average());
                 }
-
-                using (var context = new Context(database.ConnectionString))
-                {
-                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
-                    stopwatch.Restart();
-                    manual = new StaticPagedList<Person>(query.Skip(0).Take(100).ToList(), 1, 100, query.Count()) ;
-                    stopwatch.Stop();
-                    Print("manual", manual, stopwatch);
-                }
-
-                using (var context = new Context(database.ConnectionString))
-                {
-                    var query = context.Persons.OrderBy(x => x.Id).AsNoTracking();
-
-                    var items = query.Skip(0).Take(100).Future();
-                    var total = query.FutureCount();
-
-                    stopwatch.Restart();
-                    future = new StaticPagedList<Person>(items, 1, 100, total);
-                    stopwatch.Stop();
-                    Print("future (static)", future, stopwatch);
-                }
+                Console.WriteLine("-----");
             }
 
             Console.ReadLine();
         }
 
-        public static void Print(string title, IPagedList list, Stopwatch stopwatch)
+        public static void Print(string title, IPagedList list, Stopwatch stopwatch, Dictionary<string, List<double>> runs)
         {
             Console.WriteLine("{0} : {1} ms | pageCount: {2} | total {3} ",
                 title,
                 stopwatch.Elapsed.TotalMilliseconds,
                 list.PageCount,
                 list.TotalItemCount);
+
+            runs[title].Add(stopwatch.Elapsed.TotalMilliseconds);
         }
     }
 
